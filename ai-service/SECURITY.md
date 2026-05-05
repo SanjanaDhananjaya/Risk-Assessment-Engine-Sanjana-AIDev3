@@ -736,3 +736,55 @@ The implementation aligns with:
 - Modern AI security considerations  
 
 ---
+
+## 📅 Day 16 – Security Talking Points
+
+## 1. JWT Authentication
+
+Protected endpoints require a valid token.
+
+- Missing token returns `401 Unauthorized`
+- Wrong role returns `403 Forbidden`
+- Valid token with correct role allows access
+
+## 2. Rate Limiting
+
+Rate limiting protects the API from abuse.
+
+- Implemented using Flask-Limiter
+- Prevents repeated high-volume requests
+- Returns `429 Too Many Requests` when exceeded
+
+## 3. Input Sanitisation
+
+Input sanitisation blocks malicious payloads.
+
+Blocked payloads include:
+
+- XSS: `<script>alert(1)</script>`
+- SQL Injection: `DROP TABLE users`
+- Prompt Injection: `ignore previous instructions`
+
+Invalid input returns `400 Bad Request`.
+
+## 4. OWASP ZAP Results
+
+OWASP ZAP was used for vulnerability scanning.
+
+- Security headers were added
+- Critical findings fixed
+- High findings fixed
+- Medium findings documented as fixed, accepted, or planned
+
+Final status:
+
+- Critical: 0
+- High: 0
+
+## Demo Explanation
+
+The Risk Assessment Engine uses layered security.
+
+JWT protects sensitive endpoints, rate limiting prevents abuse, input sanitisation blocks injection attempts, and OWASP ZAP confirms that the application has no remaining Critical or High vulnerabilities.
+
+---
