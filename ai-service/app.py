@@ -1,50 +1,97 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, make_response
+from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-import re
+import jwt
+import datetime
+from functools import wraps
 
 app = Flask(__name__)
+CORS(app)
 
-# ✅ Rate Limiter (Day 4 + Day 10 verification)
+# Secret key for JWT
+app.config['SECRET_KEY'] = 'your_secret_key_here'
+
+# -------------------------------
+# Rate Limiter
+# -------------------------------
 limiter = Limiter(
-    get_remote_address,
+    key_func=get_remote_address,
     app=app,
-    default_limits=["30 per minute"]
+    default_limits=["200 per day", "50 per hour"]
 )
 
-# ✅ Security Headers (Day 8)
+# -------------------------------
+# Security Headers
+# -------------------------------
 @app.after_request
 def add_security_headers(response):
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Content-Security-Policy'] = "default-src 'self'"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    response.headers["Content-Security-Policy"] = "default-src 'self'"
     return response
 
-# ✅ Input Sanitization (Day 3)
-def sanitize_input(text):
-    text = re.sub(r'<.*?>', '', text)  # remove HTML
+# -------------------------------
+# Dummy User (for demo)
+# -------------------------------
+USER_DATA = {
+    "username": "admin",
+    "password": "password123"
+}
 
-    if re.search(r'ignore previous instructions|bypass|override|act as', text, re.IGNORECASE):
-        return "PROMPT_INJECTION"
+# -------------------------------
+# JWT Token Required Decorator
+# -------------------------------
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
 
-    if re.search(r'(SELECT|DROP|INSERT|DELETE|OR 1=1)', text, re.IGNORECASE):
-        return "SQL_INJECTION"
+        if 'Authorization' in request.headers:
+            token = request.headers['Authorization']
 
-    return text
+        if not token:
+            return jsonify({'error': 'Token is missing'}), 401
 
-# ✅ Health Check (used by backend)
-@app.route("/health", methods=["GET"])
-def health():
-    return jsonify({"status": "Flask API running"}), 200
+        try:
+            decoded = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+        except:
+            return jsonify({'error': 'Invalid or expired token'}), 401
 
-# ✅ AI Check Endpoint (used in Day 6 + Day 10)
-@app.route("/check-ai", methods=["GET"])
-def check_ai():
-    return jsonify({"status": "AI service is running"}), 200
+        return f(*args, **kwargs)
 
-# ✅ Analyze Endpoint (Day 2 + 3 + 5)
-@app.route("/analyze", methods=["POST"])
+    return decorated
+
+# -------------------------------
+# Login Route
+# -------------------------------
+@app.route('/login', methods=['POST'])
+def login():
+    auth = request.get_json()
+
+    if not auth or not auth.get("username") or not auth.get("password"):
+        return jsonify({"error": "Missing credentials"}), 400
+
+    if auth["username"] == USER_DATA["username"] and auth["password"] == USER_DATA["password"]:
+        token = jwt.encode({
+            'user': auth["username"],
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=30)
+        }, app.config['SECRET_KEY'], algorithm="HS256")
+
+        return jsonify({
+            "token": token
+        })
+
+    return jsonify({"error": "Invalid credentials"}), 401
+
+# -------------------------------
+# Protected Analyze Route
+# -------------------------------
+@app.route('/analyze', methods=['POST'])
+@token_required
 @limiter.limit("10 per minute")
 def analyze():
     data = request.get_json()
@@ -52,19 +99,44 @@ def analyze():
     if not data or "text" not in data:
         return jsonify({"error": "Invalid input"}), 400
 
-    result = sanitize_input(data["text"])
+    text = data["text"]
+    lower_text = text.lower()
 
-    if result == "PROMPT_INJECTION":
-        return jsonify({"error": "Prompt injection detected"}), 400
+    # XSS Detection
+    dangerous_patterns = ["<script>", "javascript:", "onerror=", "alert("]
 
-    if result == "SQL_INJECTION":
-        return jsonify({"error": "SQL injection detected"}), 400
+    for pattern in dangerous_patterns:
+        if pattern in lower_text:
+            return jsonify({"error": "Potential XSS detected"}), 400
+
+    # Risk logic
+    risk_keywords = ["attack", "hack", "malware", "phishing", "breach"]
+    score = sum(10 for word in risk_keywords if word in lower_text)
+
+    if score >= 30:
+        level = "High Risk"
+    elif score >= 10:
+        level = "Medium Risk"
+    else:
+        level = "Low Risk"
 
     return jsonify({
-        "risk_level": "LOW",
-        "message": "Input is safe"
-    }), 200
+        "message": "Analysis successful",
+        "risk_score": score,
+        "risk_level": level
+    })
 
-# ✅ Run App
-if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+# -------------------------------
+# Rate Limit Handler
+# -------------------------------
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    return jsonify({
+        "error": "Too many requests"
+    }), 429
+
+# -------------------------------
+# Run App
+# -------------------------------
+if __name__ == '__main__':
+    app.run(debug=True)

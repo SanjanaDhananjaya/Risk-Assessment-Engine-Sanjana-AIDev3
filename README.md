@@ -1208,3 +1208,244 @@ The system is secure, stable, and ready for production-level extension.
 **Status: APPROVED ✅**
 
 ---
+
+# 📅 DAY 11 – Vulnerability Identification & Fixing (OWASP ZAP)
+
+## 🔍 Objective
+To identify critical vulnerabilities in the application using **OWASP ZAP** and apply necessary fixes.
+
+## ⚙️ Implementation Details
+
+- Performed **Active Scan** using OWASP ZAP  
+- Identified:
+  - Missing security headers  
+  - Potential XSS vulnerabilities  
+  - Content sniffing risks  
+- Fixed vulnerabilities in backend configuration  
+
+## 🛡️ Key Fixes
+- Added missing headers  
+- Improved input handling  
+- Secured API responses  
+
+## 📸 Screenshots
+
+### 🔴 Critical Issues Fixed
+![Day 11 Critical](images/day11_critical_fixed.png)
+
+### 🔍 ZAP Active Scan Results
+![Day 11 ZAP](images/day11_zap_active_scan.png)
+
+---
+
+# 📅 DAY 12 – Security Headers Implementation
+
+## 🔍 Objective
+To secure HTTP responses by adding **security headers** to prevent browser-based attacks.
+
+## ⚙️ Implementation Details
+
+Implemented the following headers:
+
+| Header | Purpose |
+|------|--------|
+| X-Content-Type-Options | Prevent MIME sniffing |
+| X-Frame-Options | Prevent clickjacking |
+| X-XSS-Protection | Enable browser XSS filter |
+| Content-Security-Policy | Restrict content sources |
+| Referrer-Policy | Control referrer info |
+| Permissions-Policy | Disable sensitive APIs |
+
+## 🧠 Working
+
+These headers are applied globally using Flask middleware (`@after_request`), ensuring every response is secured.
+
+## 📸 Screenshots
+
+### 🛡️ Security Headers Applied
+![Day 12 Headers](images/day12_talisman_headers.png)
+
+### ✅ ZAP Scan – No High Alerts
+![Day 12 ZAP](images/day12_zap_zero_high.png)
+
+---
+
+# 📅 DAY 13 – Access Control & XSS Protection
+
+## 🔍 Objective
+To restrict unauthorized access and protect against malicious inputs.
+
+## ⚙️ Implementation Details
+
+### 🔐 Access Control
+- Implemented authentication checks  
+- Returned:
+  - `401 Unauthorized` (no token)  
+  - `403 Forbidden` (invalid role)
+
+### 🛡️ XSS Protection
+- Blocked dangerous patterns:
+  - `<script>`
+  - `javascript:`
+  - `onerror=`
+  - `alert()`
+
+### ⚡ Rate Limiting (Basic)
+- Limited repeated requests  
+- Prevented brute-force attempts  
+
+## 🧠 Working Flow
+- Request → Validate Token → Check Role → Validate Input → Process
+
+
+## 📸 Screenshots
+
+### ❌ No Token (401)
+![401](images/day13_401_no_token.png)
+
+### ❌ Wrong Role (403)
+![403](images/day13_403_wrong_role.png)
+
+### ✅ Authorized Role
+![Correct Role](images/day13_correctrole.png)
+
+### 🚫 Rate Limit Triggered
+![Rate Limit](images/day13_rate_limit_429.png)
+
+### 🛑 XSS Blocked
+![XSS](images/day13_xss_block.png)
+
+---
+
+# 📅 DAY 14 – Rate Limiting & Input Validation
+
+## 🔍 Objective
+To prevent API abuse and ensure safe input handling.
+
+## ⚙️ Implementation Details
+
+### 🚫 Rate Limiting
+- Implemented using **Flask-Limiter**
+- Limits applied:
+  - 10 requests/minute per endpoint
+  - Global limits per IP
+
+### 🛡️ Input Validation
+- Checked JSON structure  
+- Rejected invalid/missing input  
+- Strengthened XSS filtering  
+
+## 🧠 Working
+- User Request → Rate Check → Input Validation → Security Check → Response
+
+
+## 📸 Screenshots
+
+### ✅ Backend Running
+![Backend](images/day14_Backend_running_successfully.png)
+
+### ❌ Invalid Input
+![Invalid](images/day14_Invalid_input_rejected.png)
+
+### 🚫 Rate Limit
+![Rate](images/day14_Rate_limiting.png)
+
+### ✅ Valid Request
+![Valid](images/day14_valid_analysis_request.png)
+
+### 🛑 XSS Blocked
+![XSS](images/day14_XSS_attack_blocked.png)
+
+---
+
+# 📅 DAY 15 – JWT Authentication
+
+## 🔍 Objective
+To secure API endpoints using token-based authentication.
+
+## ⚙️ Implementation Details
+
+### 🔑 JWT Token System
+- User logs in via `/login`
+- Server generates JWT token containing:
+  - Username
+  - Expiry time
+- Token must be sent in:
+  - Authorization: <token>
+
+
+### 🔐 Protected Endpoint
+- `/analyze` is protected
+- Only valid token → access granted  
+
+## 🧠 Authentication Flow
+- Login → Generate Token → Store Token → Send Token → Access Protected API
+
+
+## ⚙️ Security Features
+
+- Token expiration (30 minutes)  
+- Signature verification  
+- Invalid token rejection  
+
+## 📸 Screenshots
+
+### 🔑 Token Generated
+![JWT](images/day15_JWT_token_generated.png)
+
+### ❌ Unauthorized Access
+![Unauthorized](images/day15_Unauthorized_access_blocked.png)
+
+### ✅ Authorized Request
+![Authorized](images/day15_Authorized_request_success.png)
+
+### 🚫 Rate Limit
+![Rate Limit](images/day15_Rate_limiting%20copy)
+
+### 🛑 XSS Blocked
+![XSS](images/day15_XSS_blocked.png)
+
+---
+
+# 🔐 Overall Security Improvements
+
+| Category | Implementation |
+|--------|--------------|
+| Vulnerability Scanning | OWASP ZAP |
+| HTTP Security | Headers |
+| Input Security | Validation + XSS filtering |
+| Access Control | Authentication & Authorization |
+| API Protection | Rate Limiting |
+| Authentication | JWT |
+
+---
+
+# ⚠️ Threats Mitigated
+
+- Cross-Site Scripting (XSS)  
+- Clickjacking  
+- MIME sniffing attacks  
+- Unauthorized API access  
+- Brute-force attacks  
+- API flooding / DoS  
+
+---
+
+# 🎤 Viva Explanation (Short)
+
+> “We progressively secured the backend by identifying vulnerabilities using ZAP, implementing HTTP security headers, enforcing authentication and role-based access, validating user inputs to prevent XSS, adding rate limiting to prevent abuse, and finally securing APIs using JWT-based authentication.”
+
+---
+
+# 🏁 Conclusion
+
+The system has been transformed into a **secure backend application** by integrating:
+
+- Proactive vulnerability detection  
+- Defensive programming techniques  
+- Authentication & authorization  
+- Secure API practices  
+
+This ensures robustness against **real-world cyber threats**.
+
+---

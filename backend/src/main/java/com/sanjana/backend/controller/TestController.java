@@ -10,4 +10,9 @@ public class TestController {
     public String checkAI() {
         return "{\"status\":\"AI service is running\"}";
     }
+
+    @GetMapping("/secure/test")
+    public String secureTest() {
+        return "Secure endpoint accessed";
+    }
 }
