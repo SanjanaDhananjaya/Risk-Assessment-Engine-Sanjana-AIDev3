@@ -1,27 +1,10 @@
+# ai-service/middleware/security_middleware.py
+
 import re
-from flask import request, jsonify
+from flask import request, jsonify, g
+from services.sanitizer import sanitize_input
 
-# 🔐 Regex patterns
-HTML_PATTERN = re.compile(r"<.*?>")
 
-PROMPT_INJECTION_PATTERNS = [
-    r"ignore previous instructions",
-    r"system prompt",
-    r"bypass",
-    r"override",
-    r"jailbreak",
-    r"act as"
-]
-
-SQL_INJECTION_PATTERNS = [
-    r"select\s",
-    r"drop\s",
-    r"insert\s",
-    r"delete\s",
-    r"or\s+1=1"
-]
-
-# 🔐 NEW — PII Detection Patterns (Day 9)
 PII_PATTERNS = {
     "email": r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+",
     "phone": r"\b\d{10}\b",
@@ -30,73 +13,45 @@ PII_PATTERNS = {
 }
 
 
-def sanitize_input(text):
-    return re.sub(HTML_PATTERN, "", text)
-
-
-def detect_pattern(text, patterns):
-    for pattern in patterns:
-        if re.search(pattern, text, re.IGNORECASE):
-            return True
-    return False
-
-
 def detect_pii(text):
     for key, pattern in PII_PATTERNS.items():
-        if re.search(pattern, text):
+        if re.search(pattern, text, re.IGNORECASE):
             return key
     return None
 
 
 def security_middleware():
-    # ✅ Skip GET requests
-    if request.method == "GET":
+    if request.method not in ["POST", "PUT", "PATCH"]:
         return None
 
-    # ✅ Must be JSON
     if not request.is_json:
-        return jsonify({"error": "Invalid content type"}), 400
+        return jsonify({"error": "Invalid input"}), 400
 
-    data = request.get_json()
+    data = request.get_json(silent=True)
 
-    # ✅ Empty check
-    if not data:
-        return jsonify({"error": "Empty request body"}), 400
+    # Fix JSON array / malformed body crash
+    if not isinstance(data, dict) or not data:
+        return jsonify({"error": "Invalid input"}), 400
 
     cleaned_data = {}
 
     for key, value in data.items():
         if not isinstance(value, str):
-            return jsonify({"error": "All fields must be strings"}), 400
+            return jsonify({"error": "Invalid input"}), 400
 
-        # 🔹 Sanitize HTML
-        cleaned = sanitize_input(value)
-
-        # 🔹 Detect Prompt Injection
-        if detect_pattern(cleaned, PROMPT_INJECTION_PATTERNS):
-            return jsonify({
-                "error": "Prompt injection detected",
-                "field": key
-            }), 400
-
-        # 🔹 Detect SQL Injection
-        if detect_pattern(cleaned, SQL_INJECTION_PATTERNS):
-            return jsonify({
-                "error": "SQL injection detected",
-                "field": key
-            }), 400
-
-        # 🔴 NEW — Detect PII (Day 9)
-        pii_type = detect_pii(cleaned)
+        pii_type = detect_pii(value)
         if pii_type:
-            return jsonify({
-                "error": f"PII detected ({pii_type})",
-                "field": key
-            }), 400
+            return jsonify({"error": "Invalid input"}), 400
+
+        cleaned, error = sanitize_input(value)
+
+        if error:
+            return jsonify({"error": "Invalid input"}), 400
 
         cleaned_data[key] = cleaned
 
-    # ✅ Attach safe data
+    # Correctly attach sanitized values for downstream routes
+    g.cleaned_json = cleaned_data
     request.cleaned_json = cleaned_data
 
     return None

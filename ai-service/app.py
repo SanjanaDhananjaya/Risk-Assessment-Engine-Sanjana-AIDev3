@@ -1,117 +1,64 @@
-from flask import Flask, request, jsonify, make_response
-from flask_cors import CORS
+# ai-service/app.py
+
+from flask import Flask, jsonify, g, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-import jwt
-import datetime
-from functools import wraps
+from flask_limiter.errors import RateLimitExceeded
+
+from middleware.security_middleware import security_middleware
 
 app = Flask(__name__)
-CORS(app)
 
-# Secret key for JWT
-app.config['SECRET_KEY'] = 'your_secret_key_here'
-
-# -------------------------------
-# Rate Limiter
-# -------------------------------
 limiter = Limiter(
     key_func=get_remote_address,
     app=app,
-    default_limits=["200 per day", "50 per hour"]
+    default_limits=["30 per minute"]
 )
 
-# -------------------------------
-# Security Headers
-# -------------------------------
+
+@app.before_request
+def before_request():
+    return security_middleware()
+
+
 @app.after_request
 def add_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Content-Security-Policy"] = "default-src 'self'"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-    response.headers["Content-Security-Policy"] = "default-src 'self'"
     return response
 
-# -------------------------------
-# Dummy User (for demo)
-# -------------------------------
-USER_DATA = {
-    "username": "admin",
-    "password": "password123"
-}
 
-# -------------------------------
-# JWT Token Required Decorator
-# -------------------------------
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = None
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "AI service running"}), 200
 
-        if 'Authorization' in request.headers:
-            token = request.headers['Authorization']
 
-        if not token:
-            return jsonify({'error': 'Token is missing'}), 401
+@app.route("/test", methods=["POST"])
+def test():
+    data = g.get("cleaned_json", {})
 
-        try:
-            decoded = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
-        except:
-            return jsonify({'error': 'Invalid or expired token'}), 401
+    return jsonify({
+        "message": "Safe input received",
+        "cleaned_text": data.get("text", "")
+    }), 200
 
-        return f(*args, **kwargs)
 
-    return decorated
-
-# -------------------------------
-# Login Route
-# -------------------------------
-@app.route('/login', methods=['POST'])
-def login():
-    auth = request.get_json()
-
-    if not auth or not auth.get("username") or not auth.get("password"):
-        return jsonify({"error": "Missing credentials"}), 400
-
-    if auth["username"] == USER_DATA["username"] and auth["password"] == USER_DATA["password"]:
-        token = jwt.encode({
-            'user': auth["username"],
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=30)
-        }, app.config['SECRET_KEY'], algorithm="HS256")
-
-        return jsonify({
-            "token": token
-        })
-
-    return jsonify({"error": "Invalid credentials"}), 401
-
-# -------------------------------
-# Protected Analyze Route
-# -------------------------------
-@app.route('/analyze', methods=['POST'])
-@token_required
+@app.route("/analyze", methods=["POST"])
 @limiter.limit("10 per minute")
 def analyze():
-    data = request.get_json()
+    data = g.get("cleaned_json", {})
+    text = data.get("text", "")
 
-    if not data or "text" not in data:
-        return jsonify({"error": "Invalid input"}), 400
-
-    text = data["text"]
-    lower_text = text.lower()
-
-    # XSS Detection
-    dangerous_patterns = ["<script>", "javascript:", "onerror=", "alert("]
-
-    for pattern in dangerous_patterns:
-        if pattern in lower_text:
-            return jsonify({"error": "Potential XSS detected"}), 400
-
-    # Risk logic
+    score = 0
     risk_keywords = ["attack", "hack", "malware", "phishing", "breach"]
-    score = sum(10 for word in risk_keywords if word in lower_text)
+
+    for word in risk_keywords:
+        if word in text.lower():
+            score += 10
 
     if score >= 30:
         level = "High Risk"
@@ -123,20 +70,41 @@ def analyze():
     return jsonify({
         "message": "Analysis successful",
         "risk_score": score,
-        "risk_level": level
-    })
+        "risk_level": level,
+        "cleaned_text": text
+    }), 200
 
-# -------------------------------
-# Rate Limit Handler
-# -------------------------------
-@app.errorhandler(429)
-def ratelimit_handler(e):
+
+@app.route("/generate-report", methods=["POST"])
+@limiter.limit("10 per minute")
+def generate_report():
+    data = g.get("cleaned_json", {})
+    text = data.get("text", "")
+
     return jsonify({
-        "error": "Too many requests"
+        "title": "Risk Assessment Report",
+        "summary": "Report generated successfully",
+        "input_reviewed": text,
+        "recommendations": [
+            "Continue monitoring risk indicators",
+            "Apply access controls",
+            "Review security logs regularly"
+        ]
+    }), 200
+
+
+@app.errorhandler(RateLimitExceeded)
+def handle_rate_limit(e):
+    return jsonify({
+        "error": "Too many requests",
+        "retry_after": str(e.description)
     }), 429
 
-# -------------------------------
-# Run App
-# -------------------------------
-if __name__ == '__main__':
-    app.run(debug=True)
+
+@app.errorhandler(Exception)
+def handle_error(e):
+    return jsonify({"error": "Internal error"}), 500
+
+
+if __name__ == "__main__":
+    app.run(port=5000, debug=False)
